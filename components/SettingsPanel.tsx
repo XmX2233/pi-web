@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useTheme } from "@/hooks/useTheme";
+import { useBackground, INTERVAL_OPTIONS_SEC, formatIntervalSec } from "@/hooks/useBackground";
 import { THEME_OPTIONS } from "@/lib/theme";
 import { ThemeIcon } from "./ThemeIcon";
 import {
@@ -66,6 +67,25 @@ export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: {
 function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, onQuoteSelectionChange }: Pick<Props, "sessionId" | "onSessionReloaded" | "quoteSelectionEnabled" | "onQuoteSelectionChange">) {
   const { locale, setLocale, supportedLocales, t } = useI18n();
   const { preference, setThemePreference } = useTheme();
+  const {
+    enabled: bgEnabled,
+    coverage: bgCoverage,
+    sound: bgSound,
+    dim: bgDim,
+    intervalSec: bgIntervalSec,
+    order: bgOrder,
+    items: bgItems,
+    currentIndex: bgCurrentIndex,
+    currentItem: bgCurrentItem,
+    addFiles: bgAddFiles,
+    removeItem: bgRemoveItem,
+    removeAll: bgRemoveAll,
+    setEnabled: bgSetEnabled,
+    setCoverage: bgSetCoverage,
+    setSound: bgSetSound,
+    setDim: bgSetDim,
+    setIntervalSec: bgSetIntervalSec,
+  } = useBackground();
   const { width: chatContentWidth, setWidth: setChatContentWidth, fontSize, setFontSize } = useChatAppearance();
   const enterSendMode = useEnterSendMode();
   const [shellSettings, setShellSettings] = useState<ShellToolSettingsResponse | null>(null);
@@ -186,6 +206,130 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
               </label>
             );
           })}
+        </div>
+      </section>
+
+      <section className="settings-general-section">
+        <h3 className="settings-general-heading">{t("settings.background")}</h3>
+        <p className="settings-general-description">{t("settings.backgroundDescription")}</p>
+        <div className="settings-bg-options">
+          <label className="config-button config-button-small config-button-secondary settings-bg-pick">
+            <input
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              className="sr-only"
+              onChange={(event) => {
+                if (event.target.files && event.target.files.length > 0) {
+                  bgAddFiles(event.target.files);
+                  event.target.value = "";
+                }
+              }}
+            />
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M4 15a2 2 0 0 0 2 2h2" /><path d="M18 8a2 2 0 0 0-2-2h-2" /><circle cx="12" cy="13" r="8" /><path d="M12 9v8" /><path d="M8 13h8" />
+            </svg>
+            {t("settings.bgPick")}
+          </label>
+
+          {bgOrder.length > 0 && (
+            <div className="settings-bg-list-wrap">
+              <div className="settings-bg-list-heading">
+                <span>{t("settings.bgList")}（{bgOrder.length}）</span>
+                <button type="button" className="config-button config-button-small config-button-ghost" onClick={bgRemoveAll}>
+                  {t("settings.bgClearAll")}
+                </button>
+              </div>
+              <ul className="settings-bg-list">
+                {bgOrder.map((item, index) => (
+                  <li key={item.id} className={bgItems.length > 0 && index === bgCurrentIndex ? "is-current" : ""}>
+                    <span className="settings-bg-list-kind" aria-hidden="true">{item.kind === "video" ? "▶" : "▣"}</span>
+                    <span className="settings-bg-list-name" title={item.name}>{item.name}</span>
+                    <button
+                      type="button"
+                      className="settings-bg-list-remove"
+                      title={t("settings.bgRemove")}
+                      aria-label={`${t("settings.bgRemove")}: ${item.name}`}
+                      onClick={() => bgRemoveItem(item.id)}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {bgCurrentItem && (
+            <div className="settings-bg-preview">
+              {bgCurrentItem.kind === "video" ? (
+                <video src={bgCurrentItem.url} muted autoPlay loop playsInline />
+              ) : (
+                <img src={bgCurrentItem.url} alt="" />
+              )}
+            </div>
+          )}
+
+          <div className="settings-chat-option settings-chat-switch-option">
+            <span>{t("settings.bgEnabled")}</span>
+            <ConfigSwitch checked={bgEnabled} label={t("settings.bgEnabled")} onChange={bgSetEnabled} />
+          </div>
+
+          <div className="settings-chat-option settings-chat-switch-option">
+            <span>{t("settings.bgVideoSound")}</span>
+            <ConfigSwitch checked={bgSound} label={t("settings.bgVideoSound")} onChange={bgSetSound} />
+          </div>
+
+          <div className="settings-chat-option settings-chat-range-option">
+            <div className="settings-chat-range-header">
+              <label id="settings-bg-coverage">{t("settings.bgCoverage")}</label>
+            </div>
+            <div role="radiogroup" aria-labelledby="settings-bg-coverage" className="settings-bg-radios">
+              <label className="settings-bg-radio">
+                <input type="radio" name="bg-coverage" value="full" checked={bgCoverage === "full"} onChange={() => bgSetCoverage("full")} />
+                <span>{t("settings.bgCoverageFull")}</span>
+              </label>
+              <label className="settings-bg-radio">
+                <input type="radio" name="bg-coverage" value="chat" checked={bgCoverage === "chat"} onChange={() => bgSetCoverage("chat")} />
+                <span>{t("settings.bgCoverageChat")}</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="settings-chat-option settings-chat-range-option">
+            <div className="settings-chat-range-header">
+              <label htmlFor="settings-bg-interval">{t("settings.bgInterval")}</label>
+              <output htmlFor="settings-bg-interval">{formatIntervalSec(bgIntervalSec, t("settings.bgIntervalNever"))}</output>
+            </div>
+            <select
+              id="settings-bg-interval"
+              className="settings-bg-interval-select"
+              value={bgIntervalSec}
+              onChange={(event) => bgSetIntervalSec(Number(event.target.value))}
+            >
+              {INTERVAL_OPTIONS_SEC.map((sec) => (
+                <option key={sec} value={sec}>
+                  {formatIntervalSec(sec, t("settings.bgIntervalNever"))}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="settings-chat-option settings-chat-range-option">
+            <div className="settings-chat-range-header">
+              <label htmlFor="settings-bg-dim">{t("settings.bgDim")}</label>
+              <output htmlFor="settings-bg-dim">{Math.round(bgDim * 100)}%</output>
+            </div>
+            <input
+              id="settings-bg-dim"
+              type="range"
+              min={0}
+              max={80}
+              step={5}
+              value={Math.round(bgDim * 100)}
+              onChange={(event) => bgSetDim(Number(event.target.value) / 100)}
+            />
+          </div>
         </div>
       </section>
 
