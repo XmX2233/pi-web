@@ -172,6 +172,16 @@ export function AppShell() {
     setSearchTarget((current) => current === target ? null : current);
   }, []);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
+  // 桌面壳标记：Pi 桌面（WebView2 壳）注入 window.__PI_DESKTOP__，设置面板直接弹独立窗口
+  const inDesktopShell = typeof window !== "undefined" && (window as any).__PI_DESKTOP__ === true;
+  const openSettings = (section: SettingsSection) => {
+    if (inDesktopShell) {
+      const cwdParam = projectTrustCwd ? `&cwd=${encodeURIComponent(projectTrustCwd)}` : "";
+      window.open(`${window.location.origin}/settings?section=${section}${cwdParam}`, "pi-settings", "width=1000,height=720");
+    } else {
+      setSettingsSection(section);
+    }
+  };
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
@@ -1207,7 +1217,7 @@ export function AppShell() {
             <button
               key={section}
               type="button"
-              onClick={() => setSettingsSection(section)}
+              onClick={() => openSettings(section)}
               disabled={disabled}
               title={disabled ? translate("settings.projectRequired") : label}
               aria-label={label}
@@ -1228,7 +1238,7 @@ export function AppShell() {
         })}
         <button
           type="button"
-          onClick={() => setSettingsSection(getLastSettingsSection(projectTrustCwd))}
+          onClick={() => openSettings(getLastSettingsSection(projectTrustCwd))}
           title={translate("common.settings")}
           aria-label={translate("common.settings")}
           style={{

@@ -74,13 +74,14 @@ function persistMeta(next: BgState): void {
       dim: next.dim,
       intervalSec: next.intervalSec,
       order: next.order,
+      currentIndex: next.currentIndex,
     }));
   } catch {
     // ignore storage errors (private mode, quota, etc.)
   }
 }
 
-function readMeta(): Pick<BgState, "enabled" | "coverage" | "sound" | "dim" | "intervalSec" | "order"> | null {
+function readMeta(): Pick<BgState, "enabled" | "coverage" | "sound" | "dim" | "intervalSec" | "order" | "currentIndex"> | null {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return null;
@@ -101,6 +102,7 @@ function readMeta(): Pick<BgState, "enabled" | "coverage" | "sound" | "dim" | "i
       dim: typeof parsed.dim === "number" && parsed.dim >= 0 && parsed.dim <= 0.9 ? parsed.dim : DEFAULT_DIM,
       intervalSec: typeof parsed.intervalSec === "number" && parsed.intervalSec >= 0 ? parsed.intervalSec : DEFAULT_INTERVAL_SEC,
       order,
+      currentIndex: typeof parsed.currentIndex === "number" && parsed.currentIndex >= 0 ? parsed.currentIndex : 0,
     };
   } catch {
     return null;
@@ -176,7 +178,7 @@ function ensureHydrated(): void {
 
   const meta = readMeta();
   if (meta) {
-    state = { ...state, ...meta, items: [], currentIndex: 0 };
+    state = { ...state, ...meta, items: [], currentIndex: meta.currentIndex ?? 0 };
   }
 
   // Load blobs from IndexedDB asynchronously.
@@ -194,6 +196,39 @@ function ensureHydrated(): void {
   }).catch(() => {
     // storage unavailable — background simply won't restore
   });
+}
+
+// 跨窗口实时同步：主窗口与「移出到桌面」的设置窗口是两个独立的 JS 环境，
+// 各自有内存状态；一方增删/切换背景后，通过 BroadcastChannel 通知另一方从
+// localStorage + IndexedDB 重新加载，立即生效（不用重启）。
+const syncChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("pi-bg-sync") : null;
+
+function broadcastSync(): void {
+  try { syncChannel?.postMessage("sync"); } catch { /* ignore */ }
+}
+
+function rehydrate(): void {
+  const meta = readMeta();
+  void idbRead().then((rows) => {
+    const items = rebuildItems(rows);
+    const current = state;
+    if (current.items.length > 0) revokeItems(current.items);
+    state = {
+      ...current,
+      ...(meta ?? {}),
+      items,
+      currentIndex: items.length === 0
+        ? 0
+        : Math.min(meta?.currentIndex ?? 0, items.length - 1),
+    };
+    emit();
+  }).catch(() => {
+    // storage unavailable — nothing to sync
+  });
+}
+
+if (syncChannel) {
+  syncChannel.addEventListener("message", () => rehydrate());
 }
 
 function subscribe(cb: () => void): () => void {
@@ -219,6 +254,7 @@ function update(mutator: (current: BgState) => BgState): void {
   state = next;
   persistMeta(state);
   emit();
+  broadcastSync();
 }
 
 function makeId(): string {
@@ -255,7 +291,7 @@ export function useBackground() {
       currentIndex: current.items.length === 0 ? 0 : current.currentIndex,
       enabled: true,
     }));
-    void idbWrite(items);
+    void idbWrite(items).then(() => broadcastSync());
   }, []);
 
   const removeItem = useCallback((id: string) => {
@@ -268,14 +304,14 @@ export function useBackground() {
       ? 0
       : Math.min(current.currentIndex, Math.max(0, items.length - 1));
     update(() => ({ ...current, order, items, currentIndex }));
-    void idbWrite(items);
+    void idbWrite(items).then(() => broadcastSync());
   }, []);
 
   const removeAll = useCallback(() => {
     const current = state;
     revokeItems(current.items);
     update(() => ({ ...current, order: [], items: [], currentIndex: 0, enabled: false }));
-    void idbWrite([]);
+    void idbWrite([]).then(() => broadcastSync());
   }, []);
 
   const setEnabled = useCallback((enabled: boolean) => {
